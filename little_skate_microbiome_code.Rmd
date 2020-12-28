@@ -1,0 +1,1007 @@
+---
+title: "Intergenerational microbial transmission in the little skate (Leucoraja erinacea)"
+author: "Alexander Okamoto"
+date: "12/28/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Code for "Intergenerational microbial transmission in the little skate (Leucoraja erinacea)"
+### Katelyn Mika, Alexander S. Okamoto, Neil H. Shubin, & David B. Mark Welch
+
+### Load Packages
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+library(RColorBrewer)
+library(dplyr)
+library(tidyverse)
+require(vegan)
+library(RVAideMemoire)
+library(tidyr)
+library(stringr)
+library(biomformat)
+#devtools::install_github("cozygene/FEAST", ref = "FEAST_beta") #to import FEAST if needed again
+library(FEAST)
+```
+
+###Create common variables
+
+```{r}
+Site<-c(rep("Hand", 2), rep("Water", 2), rep("Egg Capsule", 20), rep("External Gill", 8),rep("Internal Gill", 8),rep("Internal Liquid", 18), rep("Hand", 2), rep("Water", 6), rep("Embryonic Skin", 12),rep("Adult Skin", 4))
+Site_order<-c("Hand","Water", "Egg Capsule","Internal Liquid", "External Gill","Internal Gill", "Embryonic Skin", "Adult Skin")
+Stage<-c(rep("Control", 4), rep("0", 4), rep("16", 4),  rep("26", 4), rep("30", 4),rep("33", 4), rep("26", 4), rep("30", 4),rep("33", 4), rep("Adult", 4), rep("0", 4), rep("16", 2), rep("26", 4), rep("30", 4),rep("33", 4), rep("Control", 8), rep("26", 4), rep("30", 4),rep("33", 4), rep("Adult", 4))
+shapes<-c(2:7, 0)
+palette<-c("#737373","#1F78B4", "#E31A1C", "#FF7F00","#33A02C", "#6A3D9A") #set colors
+```
+
+###Figure 1: Taxonomic composition of embryonic and adult skate bacterial communities. 
+
+```{r}
+#import taxonomy matrix for all samples
+class_taxa_matrix<-read.table(file = 'table.from_biom.tsv', sep = '\t', header = TRUE)
+
+#create new matrix with combined columns for each stage and site
+
+#controls
+otu_IDs<-class_taxa_matrix$OUT_ID
+class_taxa_matrix$OUT_ID<-NULL
+class_taxa_matrix$water<-rowSums(class_taxa_matrix[, c(5:6, 62:67)])/8
+class_taxa_matrix$hands<-(class_taxa_matrix$AO.Hands.Day11+class_taxa_matrix$AO.Hands.Day21+class_taxa_matrix$KM.Hands.Day.11+class_taxa_matrix$KM.Hands.Day.21)/4
+#egg capsule
+class_taxa_matrix$EC0<-rowSums(class_taxa_matrix[, 7:10])/4
+class_taxa_matrix$EC16<-rowSums(class_taxa_matrix[, 11:14])/4
+class_taxa_matrix$EC26<-rowSums(class_taxa_matrix[, 15:18])/4
+class_taxa_matrix$EC30<-rowSums(class_taxa_matrix[, 19:22])/4
+class_taxa_matrix$EC33<-rowSums(class_taxa_matrix[, 23:26])/4
+#gill
+class_taxa_matrix$gill26<-rowSums(class_taxa_matrix[, 27:30])/4
+class_taxa_matrix$gill30<-rowSums(class_taxa_matrix[, 31:34])/4
+class_taxa_matrix$gill33<-rowSums(class_taxa_matrix[, 35:38])/4
+class_taxa_matrix$gilladult<-rowSums(class_taxa_matrix[, 39:42])/4
+#internal liquid
+class_taxa_matrix$IL0<-rowSums(class_taxa_matrix[, 43:46])/4
+class_taxa_matrix$IL16<-rowSums(class_taxa_matrix[, 47:48])/2
+class_taxa_matrix$IL26<-rowSums(class_taxa_matrix[, 49:52])/4
+class_taxa_matrix$IL30<-rowSums(class_taxa_matrix[, 53:56])/4
+class_taxa_matrix$IL33<-rowSums(class_taxa_matrix[, 57:60])/4
+#skin
+class_taxa_matrix$Skin26<-rowSums(class_taxa_matrix[, 69:72])/4
+class_taxa_matrix$Skin30<-rowSums(class_taxa_matrix[, 73:76])/4
+class_taxa_matrix$Skin33<-rowSums(class_taxa_matrix[, 77:80])/4
+class_taxa_matrix$Skinadult<-rowSums(class_taxa_matrix[, 81:84])/4
+class_taxa_matrix$sums<-rowSums(class_taxa_matrix[, 1:84])
+
+#create data table of combined data only
+class_taxa_matrix_cleaned<-class_taxa_matrix[,85:105]
+Class <- str_match(otu_IDs, ";[A-z]*.;(.*?);")
+class_taxa_matrix_cleaned$Class<-Class[,2]
+
+#clean data
+class_taxa_matrix_summary<-class_taxa_matrix_cleaned %>% 
+    group_by(Class) %>% 
+    summarise_each(funs(sum))%>%
+  arrange(desc(sums)) 
+
+# convert phyla below top 10 to NAs
+depth=11
+class_taxa_matrix_summary$Class[(depth+1):length(class_taxa_matrix_summary$Class)]<-"Less abundant classes"
+
+#clean data
+class_taxa_matrix_summary_trimmed<-class_taxa_matrix_summary[, 1:21] %>% 
+    group_by(Class)%>% 
+    summarise_each(funs(sum))
+class_taxa_matrix_summary_trimmed$Class[9]<-"Unknown"
+
+#tidy data
+class_taxa_matrix_summary_tidy<-class_taxa_matrix_summary_trimmed %>% 
+  pivot_longer(-Class, names_to = "site", values_to = "frequency")
+class_taxa_matrix_summary_tidy$frequency<-class_taxa_matrix_summary_tidy$frequency/100
+
+class_taxa_matrix_summary_tidy$type<-rep(c("Control (n=12)", "Control (n=12)", rep("Egg Capsule (n=20)", 5), rep("Gill (n=16)", 4), rep("Internal Liquid (n=18)", 5), rep("Skin (n=16)", 4)), depth+1)
+class_taxa_matrix_summary_tidy$type = factor(class_taxa_matrix_summary_tidy$type, levels=c("Control (n=12)","Egg Capsule (n=20)", "Internal Liquid (n=18)", "Gill (n=16)","Skin (n=16)"))
+
+site_labels<-c("hands"="Hands", "water"="Water", "EC0"="0", "EC16"="16", "EC26"="26", "EC30"="30", "EC33"="33", "gill26"="26", "gill30"="30", "gill33"="33","gilladult"="Adult","IL0"="0", "IL16"="16", "IL26"="26", "IL30"="30", "IL33"="33","Skin26"="26", "Skin30"="30", "Skin33"="33","Skinadult"="Adult")
+
+# create custom color palette
+paired_custom <- c("#A6CEE3", "blue4", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00", "#CAB2D6", "#6A3D9A", "chocolate3")
+
+Class_taxa_barplot <- ggplot(data=class_taxa_matrix_summary_tidy, aes(x=site, y=frequency, fill=factor(Class, levels=c( "Alphaproteobacteria","Deltaproteobacteria", "Gammaproteobacteria", "Actinobacteria", "Anaerolineae", "Bacilli", "Bacteroidia", "Oxyphotobacteria", "Planctomycetacia", "Verrucomicrobiae", "Less abundant classes", "Unknown")))) +
+  geom_bar(stat="identity") +
+  labs(y="relative abundance (%)", x=NULL, fill=NULL) +
+  scale_y_continuous(limits = c(-2,101), expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.position = "bottom", text = element_text(size=8)) +
+  facet_grid(~type, scales = "free", space = "free") +
+  scale_x_discrete(labels = site_labels) +
+  scale_fill_manual(values=paired_custom) + 
+  guides(fill=guide_legend(nrow=2))
+
+ggsave(filename = "Class_taxa_barplot_norm.pdf", plot = Class_taxa_barplot, device = "pdf", width = 7, height = 5)
+```
+
+###Supplementary Figure 1: Family-level composition of embryonic and adult skate bacterial communities. 
+
+###Family Level Alphaproteobacteria
+```{r}
+#import taxonomy matrix for all samples
+taxa_matrix<-read.table(file = 'table.from_biom.tsv', sep = '\t', header = TRUE) 
+
+#create new matrix with combined columns
+#controls
+otu_IDs<-taxa_matrix$OUT_ID
+taxa_matrix$OUT_ID<-NULL
+taxa_matrix$water<-rowSums(taxa_matrix[, c(5:6, 62:67)])/8
+taxa_matrix$hands<-(taxa_matrix$AO.Hands.Day11+taxa_matrix$AO.Hands.Day21+taxa_matrix$KM.Hands.Day.11+taxa_matrix$KM.Hands.Day.21)/4
+
+#egg capsule
+taxa_matrix$EC0<-rowSums(taxa_matrix[, 7:10])/4
+taxa_matrix$EC16<-rowSums(taxa_matrix[, 11:14])/4
+taxa_matrix$EC26<-rowSums(taxa_matrix[, 15:18])/4
+taxa_matrix$EC30<-rowSums(taxa_matrix[, 19:22])/4
+taxa_matrix$EC33<-rowSums(taxa_matrix[, 23:26])/4
+#gill
+taxa_matrix$gill26<-rowSums(taxa_matrix[, 27:30])/4
+taxa_matrix$gill30<-rowSums(taxa_matrix[, 31:34])/4
+taxa_matrix$gill33<-rowSums(taxa_matrix[, 35:38])/4
+taxa_matrix$gilladult<-rowSums(taxa_matrix[, 39:42])/4
+#internal liquid
+taxa_matrix$IL0<-rowSums(taxa_matrix[, 43:46])/4
+taxa_matrix$IL16<-rowSums(taxa_matrix[, 47:48])/2
+taxa_matrix$IL26<-rowSums(taxa_matrix[, 49:52])/4
+taxa_matrix$IL30<-rowSums(taxa_matrix[, 53:56])/4
+taxa_matrix$IL33<-rowSums(taxa_matrix[, 57:60])/4
+#skin
+taxa_matrix$Skin26<-rowSums(taxa_matrix[, 69:72])/4
+taxa_matrix$Skin30<-rowSums(taxa_matrix[, 73:76])/4
+taxa_matrix$Skin33<-rowSums(taxa_matrix[, 77:80])/4
+taxa_matrix$Skinadult<-rowSums(taxa_matrix[, 81:84])/4
+taxa_matrix$sums<-rowSums(taxa_matrix[, 1:84])
+
+#create datatable of combined data only
+taxa_matrix_cleaned<-taxa_matrix[,85:105]
+Class <- str_match(otu_IDs, ";[A-z]*.;(.*?);")
+Family <- str_match(otu_IDs, ";[A-z]*;[A-z]*;[A-z]*.;(.*?);")
+taxa_matrix_cleaned$Class<-Class[,2]
+taxa_matrix_cleaned$Family<-Family[,2]
+
+###generate plot for Alphaproteobacteria
+
+#clean data
+fam_taxa_matrix_summary_alpha<-taxa_matrix_cleaned %>% filter(Class=="Alphaproteobacteria") %>% 
+    group_by(Family) %>% select(-Class) %>%
+    summarise_each(funs(sum)) %>%
+  arrange(desc(sums)) 
+
+# convert low abundance phyla to NAs
+depth=12
+fam_taxa_matrix_summary_alpha$Family[(depth+2):length(fam_taxa_matrix_summary_alpha$Family)]<-"Less abundant families"
+fam_taxa_matrix_summary_alpha$Family[2]<-"NA"
+fam_taxa_matrix_summary_alpha$Family[9]<-"NA"
+
+#clean data
+fam_taxa_matrix_summary_alpha_trimmed<-fam_taxa_matrix_summary_alpha[, 1:21] %>% mutate_if(is.numeric, funs(./sum(.)*10000)) %>%
+    group_by(Family)%>% 
+    summarise_each(funs(sum))
+fam_taxa_matrix_summary_alpha_trimmed$Family[8]<-"Unknown"
+
+#tidy data
+fam_taxa_matrix_summary_alpha_tidy<-fam_taxa_matrix_summary_alpha_trimmed %>% 
+  pivot_longer(-Family, names_to = "site", values_to = "frequency")
+fam_taxa_matrix_summary_alpha_tidy$frequency<-fam_taxa_matrix_summary_alpha_tidy$frequency/100
+
+#add sample type data
+fam_taxa_matrix_summary_alpha_tidy$type<-rep(c("Control (n=12)", "Control (n=12)", rep("Egg Capsule (n=20)", 5), rep("Gill (n=16)", 4), rep("Internal Liquid (n=18)", 5), rep("Skin (n=16)", 4)), depth)
+fam_taxa_matrix_summary_alpha_tidy$type = factor(fam_taxa_matrix_summary_alpha_tidy$type, levels=c("Control (n=12)","Egg Capsule (n=20)", "Internal Liquid (n=18)", "Gill (n=16)","Skin (n=16)"))
+
+# Stacked barplot with multiple groups
+Family_Alphaproteobacteria_taxa_barplot<-ggplot(data=fam_taxa_matrix_summary_alpha_tidy, aes(x=site, y=frequency, fill=factor(Family, c("AB1","Devosiaceae", "Hyphomonadaceae", "Kiloniellaceae", "Micavibrionaceae", "Mitochondria", "Rhizobiaceae", "Rhodobacteraceae", "Rickettsiaceae", "Sphingomonadaceae", "Less abundant families", "Unknown")))) +
+  geom_bar(stat="identity") +
+  labs(y="relative abundance (%)", x=NULL, fill=NULL) +
+  scale_y_continuous(limits = c(-2,101), expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.position = "bottom", text = element_text(size=8)) +
+  facet_grid(~type, scales = "free", space = "free") +
+  scale_x_discrete(labels = site_labels) +
+  scale_fill_manual(values = paired_custom) +
+  guides(fill=guide_legend(nrow=2))
+
+###generate plot for Gammaproteobacteria
+
+#clean data
+fam_taxa_matrix_summary_gamma<-taxa_matrix_cleaned %>% filter(Class=="Gammaproteobacteria") %>% 
+    group_by(Family) %>% select(-Class) %>%
+    summarise_each(funs(sum)) %>%
+  arrange(desc(sums)) 
+
+# convert low abundance phyla to NAs
+depth=11
+fam_taxa_matrix_summary_gamma$Family[(depth+2):length(fam_taxa_matrix_summary_gamma$Family)]<-"Less abundant families"
+fam_taxa_matrix_summary_gamma$Family[5]<-"NA"
+
+#clean data
+fam_taxa_matrix_summary_gamma_trimmed<-fam_taxa_matrix_summary_gamma[, 1:21] %>% mutate_if(is.numeric, funs(./sum(.)*10000)) %>%
+    group_by(Family)%>% 
+    summarise_each(funs(sum))
+fam_taxa_matrix_summary_gamma_trimmed$Family[8]<-"Unknown"
+
+#tidy data
+fam_taxa_matrix_summary_gamma_tidy<-fam_taxa_matrix_summary_gamma_trimmed %>% 
+  pivot_longer(-Family, names_to = "site", values_to = "frequency")
+fam_taxa_matrix_summary_gamma_tidy$frequency<-fam_taxa_matrix_summary_gamma_tidy$frequency/100
+
+#add sample type data
+fam_taxa_matrix_summary_gamma_tidy$type<-rep(c("Control (n=12)", "Control (n=12)", rep("Egg Capsule (n=20)", 5), rep("Gill (n=16)", 4), rep("Internal Liquid (n=18)", 5), rep("Skin (n=16)", 4)), depth+1)
+fam_taxa_matrix_summary_gamma_tidy$type = factor(fam_taxa_matrix_summary_gamma_tidy$type, levels=c("Control (n=12)","Egg Capsule (n=20)", "Internal Liquid (n=18)", "Gill (n=16)","Skin (n=16)"))
+
+# Stacked barplot with multiple groups
+Family_Gammaproteobacteria_taxa_barplot<-ggplot(data=fam_taxa_matrix_summary_gamma_tidy, aes(x=site, y=frequency, fill=factor(Family, c("Arenicellaceae","Burkholderiaceae", "Cellvibrionaceae", "Colwelliaceae", "Enterobacteriaceae", "Halieaceae", "Nitrincolaceae", "Pseudoalteromonadaceae", "Saccharospirillaceae", "Vibrionaceae", "Less abundant families", "Unknown")))) +
+  geom_bar(stat="identity") +
+  labs(y="relative abundance (%)", x=NULL, fill=NULL) +
+  scale_y_continuous(limits = c(-2,101), expand = c(0, 0)) +
+  theme_classic()+theme(legend.position = "bottom", text = element_text(size=8)) +
+  facet_grid(~type, scales = "free", space = "free") +
+  scale_x_discrete(labels = site_labels) +
+  scale_fill_manual(values = paired_custom) +
+  guides(fill=guide_legend(nrow=2))
+
+###generate plot for Bacteroidia
+
+#clean data
+fam_taxa_matrix_summary_bact<-taxa_matrix_cleaned %>% filter(Class=="Bacteroidia") %>% 
+    group_by(Family) %>% select(-Class) %>%
+    summarise_each(funs(sum)) %>%
+  arrange(desc(sums)) 
+
+# convert low abundance phyla to NAs
+depth=11
+fam_taxa_matrix_summary_bact$Family[(depth+2):length(fam_taxa_matrix_summary_bact$Family)]<-"Less abundant families"
+fam_taxa_matrix_summary_bact$Family[2]<-"NA"
+fam_taxa_matrix_summary_bact$Family[8]<-"NA"
+
+#clean data
+fam_taxa_matrix_summary_bact_trimmed<-fam_taxa_matrix_summary_bact[, 1:21] %>% mutate_if(is.numeric, funs(./sum(.)*10000)) %>%
+    group_by(Family)%>% 
+    summarise_each(funs(sum))
+fam_taxa_matrix_summary_bact_trimmed$Family[8]<-"Unknown"
+
+#tidy data
+fam_taxa_matrix_summary_bact_tidy<-fam_taxa_matrix_summary_bact_trimmed %>% 
+  pivot_longer(-Family, names_to = "site", values_to = "frequency")
+fam_taxa_matrix_summary_bact_tidy$frequency<-fam_taxa_matrix_summary_bact_tidy$frequency/100
+
+#add sample type data
+fam_taxa_matrix_summary_bact_tidy$type<-rep(c("Control (n=12)", "Control (n=12)", rep("Egg Capsule (n=20)", 5), rep("Gill (n=16)", 4), rep("Internal Liquid (n=18)", 5), rep("Skin (n=16)", 4)), depth+1)
+fam_taxa_matrix_summary_bact_tidy$type = factor(fam_taxa_matrix_summary_bact_tidy$type, levels=c("Control (n=12)","Egg Capsule (n=20)", "Internal Liquid (n=18)", "Gill (n=16)","Skin (n=16)"))
+
+# Stacked barplot with multiple groups
+Family_Bacteroidia_taxa_barplot <- ggplot(data=fam_taxa_matrix_summary_bact_tidy, aes(x=site, y=frequency, fill=factor(Family, c("Bacteroidaceae","Crocinitomicaceae", "Cryomorphaceae", "Cyclobacteriaceae", "Flavobacteriaceae", "Marinifilaceae", "NS11-12_marine_group", "NS9_marine_group", "Saprospiraceae", "Schleiferiaceae", "Less abundant families", "Unknown")))) + geom_bar(stat="identity") +
+  labs(y="relative abundance (%)", x=NULL, fill=NULL) +
+  scale_y_continuous(limits = c(-2,101), expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.position = "bottom", text = element_text(size=8)) +
+  facet_grid(~type, scales = "free", space = "free") +
+  scale_x_discrete(labels = site_labels) +
+  scale_fill_manual(values = paired_custom) +
+  guides(fill=guide_legend(nrow=2))
+
+#generate and save combined plot
+Families_figure <- ggarrange(Family_Alphaproteobacteria_taxa_barplot, Family_Gammaproteobacteria_taxa_barplot, Family_Bacteroidia_taxa_barplot,
+                  labels = c("A", "B", "C"),
+                   ncol = 1, nrow = 3)
+ggsave("Families_figure.pdf", plot=Families_figure, device="pdf", width = 7, height = 12)
+```
+
+###Supplementary Figure 2: Genus-level composition of embryonic and adult skate bacterial communities. 
+
+```{r}
+#create datatable of combined data only
+taxa_matrix_cleaned<-taxa_matrix[,85:105]
+Class <- str_match(otu_IDs, ";[A-z]*.;(.*?);")
+Genus <- str_match(otu_IDs, ";[A-z]*;[A-z]*;[A-z]*;[A-z]*.;(.*?);")
+taxa_matrix_cleaned$Class<-Class[,2]
+taxa_matrix_cleaned$Genus<-Genus[,2]
+
+###generate plot for Alphaproteobacteria
+
+#clean data
+genus_taxa_matrix_summary_alpha<-taxa_matrix_cleaned %>% 
+  filter(Class=="Alphaproteobacteria") %>% 
+  group_by(Genus) %>% select(-Class) %>%
+  summarise_each(funs(sum)) %>%
+  arrange(desc(sums)) 
+
+# convert low abundance phyla to NAs
+depth=12
+genus_taxa_matrix_summary_alpha$Genus[(depth+2):length(genus_taxa_matrix_summary_alpha$Genus)]<-"Less abundant Genera"
+genus_taxa_matrix_summary_alpha$Genus[2]<-"NA"
+genus_taxa_matrix_summary_alpha$Genus[4]<-"NA"
+
+#clean data
+genus_taxa_matrix_summary_alpha_trimmed<-genus_taxa_matrix_summary_alpha[, 1:21] %>%
+  mutate_if(is.numeric, funs(./sum(.)*10000)) %>%
+  group_by(Genus)%>% 
+  summarise_each(funs(sum))
+genus_taxa_matrix_summary_alpha_trimmed$Genus[9]<-"Unknown"
+
+#tidy data
+genus_taxa_matrix_summary_alpha_tidy<-genus_taxa_matrix_summary_alpha_trimmed %>% 
+  pivot_longer(-Genus, names_to = "site", values_to = "frequency")
+genus_taxa_matrix_summary_alpha_tidy$frequency<-genus_taxa_matrix_summary_alpha_tidy$frequency/100
+
+#add sample type data
+genus_taxa_matrix_summary_alpha_tidy$type<-rep(c("Control (n=12)", "Control (n=12)", rep("Egg Capsule (n=20)", 5), rep("Gill (n=16)", 4), rep("Internal Liquid (n=18)", 5), rep("Skin (n=16)", 4)), depth)
+genus_taxa_matrix_summary_alpha_tidy$type = factor(genus_taxa_matrix_summary_alpha_tidy$type, levels=c("Control (n=12)","Egg Capsule (n=20)", "Internal Liquid (n=18)", "Gill (n=16)","Skin (n=16)"))
+
+# Stacked barplot with multiple groups
+Genus_Alphaproteobacteria_taxa_barplot<-ggplot(data=genus_taxa_matrix_summary_alpha_tidy, aes(x=site, y=frequency, fill=factor(Genus, c("Altererythrobacter","Amylibacter", "Anderseniella", "Candidatus_Megaira", "Devosia", "Kiloniella", "Litorimonas", "Roseovarius", "Sphingorhabdus", "Sulfitobacter", "Less abundant Genera", "Unknown")))) +
+  geom_bar(stat="identity") +
+  labs(y="relative abundance (%)", x=NULL, fill=NULL) +
+  scale_y_continuous(limits = c(-2,101), expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.position = "bottom", text = element_text(size=8)) +
+  facet_grid(~type, scales = "free", space = "free") +
+  scale_x_discrete(labels = site_labels) +
+  scale_fill_manual(values = paired_custom) +
+  guides(fill=guide_legend(nrow=2))
+
+###generate plot for Gammaproteobacteria
+
+#clean data
+genus_taxa_matrix_summary_gamma<-taxa_matrix_cleaned %>% 
+  filter(Class=="Gammaproteobacteria") %>% 
+  group_by(Genus) %>%
+  select(-Class) %>%
+  summarise_each(funs(sum)) %>%
+  arrange(desc(sums)) 
+
+# convert low abundance phyla to NAs
+depth=12
+genus_taxa_matrix_summary_gamma$Genus[(depth+2):length(genus_taxa_matrix_summary_gamma$Genus)]<-"Less abundant Genera"
+genus_taxa_matrix_summary_gamma$Genus[3:4]<-"NA"
+
+#clean data
+#genus_taxa_matrix_summary_gamma[, 2:21]<-genus_taxa_matrix_summary_gamma[, 2:21]/sum(genus_taxa_matrix_summary_gamma$sums)
+genus_taxa_matrix_summary_gamma_trimmed<-genus_taxa_matrix_summary_gamma[, 1:21] %>% 
+  mutate_if(is.numeric, funs(./sum(.)*10000)) %>%
+  group_by(Genus)%>% 
+  summarise_each(funs(sum))
+genus_taxa_matrix_summary_gamma_trimmed$Genus[6]<-"Unknown"
+
+#tidy data
+genus_taxa_matrix_summary_gamma_tidy<-genus_taxa_matrix_summary_gamma_trimmed %>% 
+  pivot_longer(-Genus, names_to = "site", values_to = "frequency")
+genus_taxa_matrix_summary_gamma_tidy$frequency<-genus_taxa_matrix_summary_gamma_tidy$frequency/100
+
+#add sample type data
+genus_taxa_matrix_summary_gamma_tidy$type<-rep(c("Control (n=12)", "Control (n=12)", rep("Egg Capsule (n=20)", 5), rep("Gill (n=16)", 4), rep("Internal Liquid (n=18)", 5), rep("Skin (n=16)", 4)), depth)
+genus_taxa_matrix_summary_gamma_tidy$type = factor(genus_taxa_matrix_summary_gamma_tidy$type, levels=c("Control (n=12)","Egg Capsule (n=20)", "Internal Liquid (n=18)", "Gill (n=16)","Skin (n=16)"))
+
+# Stacked barplot with multiple groups
+Genus_Gammaproteobacteria_taxa_barplot<-ggplot(data=genus_taxa_matrix_summary_gamma_tidy, aes(x=site, y=frequency, fill=factor(Genus, c("Arenicella","Colwellia", "Enhydrobacter", "Escherichia-Shigella", "Oleiphilus", "Oleispira", "Pelomonas", "Pseudoalteromonas", "Psychrobium", "Vibrio", "Less abundant Genera", "Unknown")))) +
+  geom_bar(stat="identity") +
+  labs(y="relative abundance (%)", x=NULL, fill=NULL)+
+  scale_y_continuous(limits = c(-2,101), expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.position = "bottom", text = element_text(size=8)) +
+  facet_grid(~type, scales = "free", space = "free") +
+  scale_x_discrete(labels = site_labels) +
+  scale_fill_manual(values = paired_custom) +
+  guides(fill=guide_legend(nrow=2))
+
+###generate plot for Bacteroidia
+
+#clean data
+genus_taxa_matrix_summary_bact<-taxa_matrix_cleaned %>% 
+  filter(Class=="Bacteroidia") %>% 
+  group_by(Genus) %>% select(-Class) %>%
+  summarise_each(funs(sum)) %>%
+  arrange(desc(sums)) 
+
+# convert low abundance phyla to NAs
+depth=12
+genus_taxa_matrix_summary_bact$Genus[(depth+2):length(genus_taxa_matrix_summary_bact$Genus)]<-"Less abundant Genera"
+genus_taxa_matrix_summary_bact$Genus[2]<-"NA"
+genus_taxa_matrix_summary_bact$Genus[11]<-"NA"
+
+#clean data
+genus_taxa_matrix_summary_bact_trimmed<-genus_taxa_matrix_summary_bact[, 1:21] %>% 
+  mutate_if(is.numeric, funs(./sum(.)*10000)) %>%
+  group_by(Genus)%>% 
+  summarise_each(funs(sum))
+genus_taxa_matrix_summary_bact_trimmed$Genus[9]<-"Unknown"
+
+#tidy data
+genus_taxa_matrix_summary_bact_tidy<-genus_taxa_matrix_summary_bact_trimmed %>% 
+  pivot_longer(-Genus, names_to = "site", values_to = "frequency")
+genus_taxa_matrix_summary_bact_tidy$frequency<-genus_taxa_matrix_summary_bact_tidy$frequency/100
+
+#add sample type data
+genus_taxa_matrix_summary_bact_tidy$type<-rep(c("Control (n=12)", "Control (n=12)", rep("Egg Capsule (n=20)", 5), rep("Gill (n=16)", 4), rep("Internal Liquid (n=18)", 5), rep("Skin (n=16)", 4)), depth)
+genus_taxa_matrix_summary_bact_tidy$type = factor(genus_taxa_matrix_summary_bact_tidy$type, levels=c("Control (n=12)","Egg Capsule (n=20)", "Internal Liquid (n=18)", "Gill (n=16)","Skin (n=16)"))
+
+# Stacked barplot with multiple groups
+Genus_Bacteroidia_taxa_barplot<-ggplot(data=genus_taxa_matrix_summary_bact_tidy, aes(x=site, y=frequency, fill=factor(Genus, c("Aquibacter","Bacteroides", "Crocinitomix", "Fulvivirga", "Lewinella", "Lutibacter", "Maritimimonas", "Tenacibaculum", "Ulvibacter", "Winogradskyella", "Less abundant Genera", "Unknown")))) + 
+  geom_bar(stat="identity") +
+  labs(y="relative abundance (%)", x=NULL, fill=NULL)+
+  scale_y_continuous(limits = c(-2,101), expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.position = "bottom", text = element_text(size=8)) +
+  facet_grid(~type, scales = "free", space = "free") +
+  scale_x_discrete(labels = site_labels) +
+  scale_fill_manual(values = paired_custom) +
+  guides(fill=guide_legend(nrow=2))
+
+#generate and save combined plot
+Genera_figure <- ggarrange(Genus_Alphaproteobacteria_taxa_barplot, Genus_Gammaproteobacteria_taxa_barplot, Genus_Bacteroidia_taxa_barplot,
+                  labels = c("A", "B", "C"),
+                   ncol = 1, nrow = 3)
+ggsave("Genera_figure.pdf", plot=Genera_figure, device="pdf", width = 7, height = 12)
+```
+
+### Figure 2: Principal component analysis plots of little skate bacterial samples. 
+
+```{r, eval=TRUE}
+#create common variables
+Site_info<-c(rep("Hand", 2), rep("Water", 2), rep("Egg Capsule", 20),rep("Gill", 16),rep("Internal Liquid", 18), rep("Hand", 2), rep("Water", 6), rep("Skin", 16))
+Site_factors<-c("Hand","Water", "Egg Capsule", "Internal Liquid", "Gill","Skin")
+Site<-factor(Site_info, as.character(Site_factors))
+
+#read in data 
+BC_norm<-read.table(file = "ordination-norm-BC_for_r.txt", sep = '\t', header = TRUE)
+BC_norm<-BC_norm[c(1:2, 5:84),] #remove bench samples
+  
+#generate plot for PC1 vs PC2
+BC_1v2<-ggplot(data = BC_norm)+aes(x = PC1, y=PC2, color=Site_info, shape=Stage)+ 
+  geom_point() +
+  labs(x=NULL, y="PC2 (9.8%)") +
+  scale_color_manual(values = palette, limits=Site_factors) +
+  theme(panel.background = element_rect(fill = NA), panel.border = element_rect(color="black", fill=NA), legend.background = element_rect(fill="grey", size=0.5, linetype="solid"), legend.position = "bottom", legend.box = "vertical",legend.direction = "horizontal", axis.text.x=element_blank(), axis.ticks.x=element_blank(), axis.text.y = element_text(angle = 90, hjust=0.5), axis.title.y = element_text(size=13)) +
+  guides(col=guide_legend("Site", ncol = 6), shape=guide_legend(ncol=7, title="Stage")) +
+  scale_shape_manual(values=shapes)
+
+#generate plot for PC1 vs PC3
+BC_1v3<-ggplot(data = BC_norm)+aes(x = PC1, y=PC3, color=Site_info, shape=Stage)+
+  geom_point() +
+  labs(x="PC1 (19.5%)", y="PC3 (7.8%)") +
+  scale_color_manual(values = palette, limits=Site_factors) +
+  theme(panel.background = element_rect(fill = NA), panel.border = element_rect(color="black", fill=NA), legend.background = element_rect(fill="grey", size=0.5, linetype="solid"), legend.direction = "horizontal", legend.position = "bottom", legend.box = "vertical", axis.text.y = element_text(angle = 90, hjust=0.5), axis.title.y = element_text(size=13), axis.title.x = element_text(size=13)) +
+  scale_shape_manual(values=shapes)
+
+#generate and save composite figure 
+BC_figure <- ggarrange(BC_1v2, BC_1v3,
+                  labels = c("A", "B"),
+                   ncol = 1, nrow = 2, 
+                 common.legend = TRUE, 
+                    legend = "bottom")
+ggsave("BC_figure_all_data.pdf", plot=BC_figure, device="pdf", width = 7, height = 7)
+```
+
+###Figure 3: Principal component analysis plots of bacterial communities by tissue. 
+
+```{r}
+###LOAD IN ORDINATION VALUES
+
+#Egg capsule BC
+EC_ord<-read.table(file = "PCoA-BC-allEC-norm-ordination-cleaned.txt", sep = '\t', header = TRUE)
+#Gill BC 
+Gill_ord<-read.table(file = "PCoA-BC-allGill-norm-ordination-cleaned.txt", sep = '\t', header = TRUE)
+#Internal Liquid BC
+IL_ord<-read.table(file = "PCoA-BC-allIW-norm-ordination-cleaned.txt", sep = '\t', header = TRUE)
+#Skin BC 
+Skin_ord<-read.table(file = "PCoA-BC-allSkin-norm-ordination-cleaned.txt", sep = '\t', header = TRUE)
+
+###create variables for each each tissue
+
+###EGG CAPSULE
+EC_Site_info<-rep("Egg Capsule", 20)
+EC_Site_factors<-"Egg Capsule"
+EC_Site<-factor(EC_Site_info, as.character(EC_Site_factors))
+EC_Stage<-c(rep("0", 4), rep("16", 4),  rep("26", 4), rep("30", 4),rep("33", 4))
+EC_palette<-"#E31A1C" #set colors
+EC_shapes<-c(2:6)
+ 
+### INTERNAL LIQUID
+IL_Site_info<-rep("Internal Liquid", 18)
+IL_Site_factors<-"Internal Liquid"
+IL_Site<-factor(IL_Site_info, as.character(IL_Site_factors))
+IL_Stage<-c(rep("0", 4), rep("16", 2),  rep("26", 4), rep("30", 4),rep("33", 4))
+IL_palette<-"#FF7F00" #set colors
+IL_shapes<-c(2:6)
+ 
+### GILL 
+Gill_Site_info<-rep("Gill", 16)
+Gill_Site_factors<-"Gill"
+Gill_Site<-factor(Gill_Site_info, as.character(Gill_Site_factors))
+Gill_Stage<-c(rep("26", 4), rep("30", 4),rep("33", 4),rep("Adult", 4))
+Gill_palette<-"#33A02C" #set colors
+Gill_shapes<-c(4:7)
+
+### SKIN
+Skin_Site_info<-rep("Skin", 16)
+Skin_Site_factors<-"Skin"
+Skin_Site<-factor(Skin_Site_info, as.character(Skin_Site_factors))
+Skin_Stage<-c(rep("26", 4), rep("30", 4),rep("33", 4),rep("Adult", 4))
+Skin_palette<-"#6A3D9A" #set colors
+Skin_shapes<-c(4:7)
+
+###CREATE TISSUE SPECIFIC PLOT OF PCoA 1v2
+
+EC_BC_1v2_2<-ggplot(data = EC_ord) +
+  aes(x = PC1, y=PC2, color=EC_Site_info, shape=EC_Stage) + 
+  geom_point() +
+  labs(x="PC1 (28.9%)", y="PC2 (19.4%)", title="Egg Capsule") +
+  scale_color_manual(values = EC_palette, limits=EC_Site_factors) +
+  theme(panel.background = element_rect(fill = NA), panel.border = element_rect(color="black", fill=NA), legend.background = element_rect(fill="grey", size=0.5, linetype="solid"), legend.position = "bottom", legend.box = "vertical",legend.direction = "horizontal",  axis.text.y = element_text(angle = 90, hjust=0.5), axis.title.y = element_text(size=13), plot.title = element_text(hjust = 0.5, face = "bold")) +
+  guides(shape=guide_legend(ncol=7, title="Stage"), color=FALSE) +
+  scale_shape_manual(values=EC_shapes)
+
+IL_BC_1v2_2<-ggplot(data = IL_ord) +
+  aes(x = PC1, y=PC2, color=IL_Site_info, shape=IL_Stage) + 
+  geom_point() +
+  labs(x="PC1 (40.6%)", y="PC2 (11.6%)", title="Internal Liquid") +
+  scale_color_manual(values = IL_palette, limits=IL_Site_factors) +
+  theme(panel.background = element_rect(fill = NA), panel.border = element_rect(color="black", fill=NA), legend.background = element_rect(fill="grey", size=0.5, linetype="solid"), legend.position = "bottom", legend.box = "vertical",legend.direction = "horizontal",  axis.text.y = element_text(angle = 90, hjust=0.5), axis.title.y = element_text(size=13), plot.title = element_text(hjust = 0.5, face = "bold")) +
+  guides(shape=guide_legend(ncol=7, title="Stage"), color=FALSE) +
+  scale_shape_manual(values=IL_shapes)
+
+Gill_BC_1v2_2<-ggplot(data = Gill_ord) +
+  aes(x = PC1, y=PC2, color=Gill_Site_info, shape=Gill_Stage)+ 
+  geom_point() +
+  labs(x="PC1 (31.9%)", y="PC2 (12.2%)", title = "Gill") +
+  scale_color_manual(values = Gill_palette, limits=Gill_Site_factors) +
+  theme(panel.background = element_rect(fill = NA), panel.border = element_rect(color="black", fill=NA), legend.background = element_rect(fill="grey", size=0.5, linetype="solid"), legend.position = "bottom", legend.box = "vertical",legend.direction = "horizontal",  axis.text.y = element_text(angle = 90, hjust=0.5), axis.title.y = element_text(size=13),plot.title = element_text(hjust = 0.5, face = "bold")) +
+  guides(shape=guide_legend(ncol=7, title="Stage"), color=FALSE) +
+  scale_shape_manual(values=Gill_shapes)
+
+Skin_BC_1v2_2<-ggplot(data = Skin_ord) +
+  aes(x = PC1, y=PC2, color=Skin_Site_info, shape=Skin_Stage) + 
+  geom_point() +
+  labs(x="PC1 (36.5%)", y="PC2 (13.1%)",title = "Skin") +
+  scale_color_manual(values = Skin_palette, limits=Skin_Site_factors) +
+  theme(panel.background = element_rect(fill = NA), panel.border = element_rect(color="black", fill=NA), legend.background = element_rect(fill="grey", size=0.5, linetype="solid"), legend.position = "bottom", legend.box = "vertical",legend.direction = "horizontal",  axis.text.y = element_text(angle = 90, hjust=0.5), axis.title.y = element_text(size=13), plot.title = element_text(hjust = 0.5, face = "bold")) +
+  guides(shape=guide_legend(ncol=7, title="Stage"), color=FALSE) +
+  scale_shape_manual(values=Skin_shapes)
+
+#generate and save composite figure
+Tissues_BC_figure <- ggarrange(EC_BC_1v2_2, IL_BC_1v2_2, Gill_BC_1v2_2, Skin_BC_1v2_2,
+                  labels = c("A", "B", "C", "D"),
+                   ncol = 2, nrow = 2, 
+                 legend.grob = stages_legend, 
+                    legend = "bottom")
+ggsave("Tissues_BC_figure.pdf", plot=Tissues_BC_figure, device="pdf", width = 7, height = 7)
+```
+
+### Figure 4: Alpha diversity of embryonic and adult skate bacterial communities
+
+```{r}
+#shannon values were calculated in QIIME2
+
+#set color palette for alpha diversity plots
+alpha_palette<-c("#737373","#1F78B4", "#E31A1C", "#FF7F00","#33A02C","#33A02C", "#6A3D9A", "#6A3D9A") #set colors
+
+#create dataframe of shannon values
+shannon<-read.table(file = 'alpha-diversity-norm-shannon.tsv', sep = '\t', header = TRUE)
+#exclude bench samples
+shannon<-shannon[c(1:2,5:84),] 
+
+#add stage and site information
+shannon$Stage<-Stage
+shannon$Site<-Site
+shannon$Site <- factor(shannon$Site, as.character(Site_order)) #set order of sites
+
+#create function to identify outliers
+is_outlier <- function(x) {
+  return(x < quantile(x, 0.25) - 1.5 * IQR(x) | x > quantile(x, 0.75) + 1.5 * IQR(x))
+}
+
+#tidy data
+shannon_tidy<-shannon %>%
+  group_by(Site) %>%
+  mutate(outlier = ifelse(is_outlier(shannon), shannon, as.numeric(NA)))%>%
+  mutate(notoutlier = ifelse(is_outlier(shannon),  as.numeric(NA), shannon))
+
+#create shannon figure
+shannon_figure<-ggplot(shannon_tidy, aes(x=Site, y=shannon)) + 
+  geom_boxplot(color=alpha_palette, outlier.color = "white", outlier.size = 0) + 
+  geom_point(aes(y=notoutlier, shape=Stage), size=2, position = position_jitter(width = .25, height = 0)) +
+  geom_point(aes(x=Site, y=outlier, shape=Stage, color=Site), size=2, show.legend = F) + 
+  scale_color_manual(values = alpha_palette) + labs(x=NULL) + theme(panel.background = element_rect(linetype = "solid",  color = "black"), legend.background = element_rect(fill="grey", size=0.5, linetype="solid"), legend.position = "bottom", axis.text.y = element_text(angle = 90, hjust=0.5, size = 7, face = "bold"), axis.text.x = element_text(size = 7, face = "bold")) + ylim(0,12)+guides(shape=guide_legend(nrow=1), color=FALSE) + scale_shape_manual(values=shapes) + scale_x_discrete(position = "top") +
+  scale_y_continuous(breaks=c(0, 2, 4, 6, 8, 10))
+
+###Create Chao1 Alpha Diversity Plot
+
+#create dataframe of Chao1 values
+chao1<-read.table(file = 'alpha-diversity-norm-chao1.tsv', sep = '\t', header = TRUE)
+#exclude bench samples
+chao1<-chao1[c(1:2,5:84),]
+
+#add stage and site information
+chao1$Stage<-Stage
+chao1$Site<-Site
+chao1$Site<-Site <- factor(chao1$Site<-Site, as.character(Site_order)) #set order of sites
+
+#tidy data
+chao_tidy<-chao1 %>%
+  group_by(Site) %>%
+  mutate(outlier = ifelse(is_outlier(chao1), chao1, as.numeric(NA)))%>%
+  mutate(notoutlier = ifelse(is_outlier(chao1), as.numeric(NA), chao1))
+
+#create chao1 figure
+chao1_figure<-ggplot(chao_tidy, aes(x=Site, y=chao1)) + 
+  geom_boxplot(color=alpha_palette, outlier.color = "white", outlier.size = 0) +
+  geom_point(aes(y=notoutlier, shape=Stage), size=2, position = position_jitter(width = .25, height = 0)) +
+  geom_point(aes(x=Site, y=outlier, shape=Stage), size=2, color="#33A02C", show.legend = F) +
+  labs(x=NULL) +
+ theme(panel.background = element_rect(linetype = "solid",  color = "black"), legend.background = element_rect(fill="grey", size=0.5, linetype="solid"), legend.position = "bottom", axis.text.y = element_text(angle = 90, hjust=0.5, size = 7, face = "bold"), axis.text.x=element_blank(),axis.ticks.x=element_blank()) +
+  ylim(0,1200) +
+  guides(shape=guide_legend(nrow=1), color=FALSE) +
+  scale_shape_manual(values=shapes)+scale_y_continuous(breaks=c(0, 200, 400, 600, 800))
+
+#create combined alpha diversity figure
+alpha_figure <- ggarrange(shannon_figure, chao1_figure,
+                    labels = c("A", "B"),
+                    ncol = 1, nrow = 2, 
+                    common.legend = TRUE, 
+                    legend = "bottom")
+ggsave("alpha_figure.pdf", plot=alpha_figure, device="pdf", width = 7, height = 7)
+```
+
+###Figure 5: Source contributions to the little skate microbiome for each stage and tissue. 
+
+```{r}
+#import raw feature table exported from Qiime2/
+raw_dat<-read_biom(biom_file = "feature-table.biom")
+
+#import ASV data as a dataframe
+otu_table <- as.data.frame(as.matrix(biom_data(raw_dat)))
+#add sequence counts for sources (water, hands, adult skin, adult gills) by summing columns
+otu_table$water_all<-otu_table$`Bucket-Water-after-dissection2`+otu_table$`Bucket-Water1`+otu_table$`MRC-Water-Cold3`+otu_table$`MRC-Water-Cold4`+otu_table$`MRC-Water1`+otu_table$`MRC-Water2`+otu_table$`Ocean-Water1`+otu_table$`Ocean-Water2`
+otu_table$hands_all<-otu_table$`AO-Hands-Day11`+otu_table$`AO-Hands-Day21`+otu_table$`KM-Hands-Day-11`+otu_table$`KM-Hands-Day-21`
+otu_table$adult_skin<-otu_table$`Tail-SkinAdult1`+otu_table$`Tail-SkinAdult2`+otu_table$`Tail-SkinAdult3`+otu_table$`Tail-SkinAdult4`
+otu_table$adult_gill<-otu_table$`GillAdult1`+otu_table$`GillAdult2`+otu_table$`GillAdult3`+otu_table$`GillAdult4`
+otu_table$egg_case_0_all<-otu_table$`Egg-Case0A`+otu_table$`Egg-Case0B`+otu_table$`Egg-Case0C`+otu_table$`Egg-Case0D`
+otu_table$int_liquid_0_all<-otu_table$`Internal-Water0A`+otu_table$`Internal-Water0B`+otu_table$`Internal-Water0C`+otu_table$`Internal-Water0D`
+otu_table$egg_case_16_all<-otu_table$`Egg-Case16A`+otu_table$`Egg-Case16B`+otu_table$`Egg-Case16C`+otu_table$`Egg-Case16D`
+otu_table$int_liquid_16_all<-otu_table$`Internal-Water16A`+otu_table$`Internal-Water16B`
+otu_table$Egg_Case_26_all<-otu_table$`Egg-Case26A`+otu_table$`Egg-Case26B`+otu_table$`Egg-Case26C`+otu_table$`Egg-Case26D`
+
+otu_table$gill_26_all<-otu_table$Gill26A+otu_table$Gill26B+otu_table$Gill26C+otu_table$Gill26D
+otu_table$int_liquid_26_all<-otu_table$`Internal-Water26A`+otu_table$`Internal-Water26B`+otu_table$`Internal-Water26C`+otu_table$`Internal-Water26D`
+otu_table$skin_26_all<-otu_table$`Tail-Skin26A`+otu_table$`Tail-Skin26B`+otu_table$`Tail-Skin26C`+otu_table$`Tail-Skin26D`
+otu_table$Egg_Case_30_all<-otu_table$`Egg-Case30A`+otu_table$`Egg-Case30B`+otu_table$`Egg-Case30C`+otu_table$`Egg-Case30D`
+otu_table$gill_30_all<-otu_table$Gill30A+otu_table$Gill30B+otu_table$Gill30C+otu_table$Gill30D
+otu_table$int_liquid_30_all<-otu_table$`Internal-Water30A`+otu_table$`Internal-Water30B`+otu_table$`Internal-Water30C`+otu_table$`Internal-Water30D`
+otu_table$skin_30_all<-otu_table$`Tail-Skin30A`+otu_table$`Tail-Skin30B`+otu_table$`Tail-Skin30C`+otu_table$`Tail-Skin30D`
+otu_table$Egg_Case_33_all<-otu_table$`Egg-Case33A`+otu_table$`Egg-Case33B`+otu_table$`Egg-Case33C`+otu_table$`Egg-Case33D`
+otu_table$gill_33_all<-otu_table$Gill33A+otu_table$Gill33B+otu_table$Gill33C+otu_table$Gill33D
+otu_table$int_liquid_33_all<-otu_table$`Internal-Water33A`+otu_table$`Internal-Water33B`+otu_table$`Internal-Water33C`+otu_table$`Internal-Water33D`
+otu_table$skin_33_all<-otu_table$`Tail-Skin33A`+otu_table$`Tail-Skin33B`+otu_table$`Tail-Skin33C`+otu_table$`Tail-Skin33D`
+
+#-------------------------------------------------------------------
+raredepth<-10000
+otu_table<-trunc(otu_table)
+
+setwd() #FEAST changes the working directory so you may need to reset between runs
+#subset ASV data table for stage 0 sinks and combined source pools
+otu_table_source_0<-t(otu_table[,c(7:10, 43:46,85:88)])
+
+#create metadata table
+envs<-c(rep("Egg Case", 4), rep("Internal Water", 4),"Water", "Hands", "Skin", "Gill")
+sourcesink<-c(rep("Sink", 8), rep("Source", 4))
+sourcesinkid<-c(1:8, rep(NA, 4))
+otu_metadata_0<-data.frame(Env=envs, SourceSink=sourcesink, id=sourcesinkid)
+rownames(otu_metadata_0)<-rownames(otu_table_source_0)
+
+#run FEAST
+otu_FEAST_output <- FEAST(C = otu_table_source_0, metadata = otu_metadata_0, different_sources_flag = 0, dir_path ="FEAST",COVERAGE = raredepth, outfile="OTU")
+
+#import FEAST output as data table
+source_contribs<-read.table("OTU_source_contributions_matrix.txt")
+#rename columns
+colnames(source_contribs)<-c("W", "H", "S", "G", "U")
+#tidy FEAST output table
+source_contribs_tidy<-pivot_longer(source_contribs, 1:5)
+source_contribs_tidy$sink<-c(rep("S0 Egg Case", 20), rep("S0 Internal Liquid", 20))
+source_contribs_tidy$sink<-factor(source_contribs_tidy$sink, as.character(c("S0 Egg Case","S0 Internal Liquid")))
+source_contribs_tidy$value<-source_contribs_tidy$value*100
+#create box and whisker plot
+fl<-c("#737373","#1F78B4", "#33A02C", "#6A3D9A", "Black") #set colors
+source_contribs_tidy$name<-factor(source_contribs_tidy$name, as.character(c("H", "W", "G", "S", "U")))
+sourcesinkplot_0<-ggplot(source_contribs_tidy, aes(x=name, y=value, col=name)) + 
+  geom_boxplot() +
+  geom_point(size = 2, shape = 16) +
+  facet_wrap(~sink) +
+  labs(x=NULL, y="Source %") +
+  theme(legend.position = "none", 
+        axis.text.y = element_text(angle = 90, hjust=0.5)) +
+  scale_color_manual(values=fl) +
+  scale_y_continuous(breaks = c(0, 25, 50, 75), limits = c(0,100))
+
+setwd()
+
+#subset ASV data table for stage 16 sinks and combined source pools
+otu_table_source_16<-t(otu_table[,c(11:14, 47:48, 85:86, 89:90)])
+
+#create metadata table
+envs_16<-c(rep("Egg Case", 4), rep("Internal Liquid", 2),"Water", "Hands","Egg Case 0", "Internal Liquid 0")
+sourcesink_16<-c(rep("Sink", 6), rep("Source", 4))
+sourcesinkid_16<-c(1:6, rep(NA, 4))
+otu_metadata_16<-data.frame(Env=envs_16, SourceSink=sourcesink_16, id=sourcesinkid_16)
+rownames(otu_metadata_16)<-rownames(otu_table_source_16)
+
+#run FEAST
+otu_FEAST_output_16 <- FEAST(C = otu_table_source_16, metadata = otu_metadata_16, different_sources_flag = 0, dir_path ="FEAST",COVERAGE = raredepth, outfile="OTU_S16")
+
+#import FEAST output as data table
+source_contribs_16<-read.table("OTU_S16_source_contributions_matrix.txt")
+#rename columns
+colnames(source_contribs_16)<-c("W", "H", "EC", "IL", "U")
+#tidy FEAST output table
+source_contribs_16_tidy<-pivot_longer(source_contribs_16, 1:5)
+source_contribs_16_tidy$sink<-c(rep("S16 Egg Case", 20), rep("S16 Internal Liquid", 10))
+source_contribs_16_tidy$sink<-factor(source_contribs_16_tidy$sink, as.character(c("S16 Egg Case","S16 Internal Liquid")))
+source_contribs_16_tidy$value<-source_contribs_16_tidy$value*100
+
+#create box and whisker plot
+fl<-c("#737373","#1F78B4", "#E31A1C", "#FF7F00","black") #set colors
+source_contribs_16_tidy$name<-factor(source_contribs_16_tidy$name, as.character(c("H", "W", "EC", "IL", "U")))
+sourcesinkplot_16<-ggplot(source_contribs_16_tidy, aes(x=name, y=value, col=name)) + 
+  geom_boxplot() +
+  geom_point(size = 2, shape = 16) +
+  facet_wrap(~sink) +
+  labs(x=NULL, y=NULL) +
+  theme(legend.position = "none", 
+        axis.text.y = element_text(angle = 90, hjust=0.5)) +
+  scale_color_manual(values=fl) +
+  scale_y_continuous(breaks = c(0, 25, 50, 75), limits = c(0,100))
+
+setwd()
+
+#subset ASV data table for stage 26 sinks and combined source pools
+otu_table_source_26<-t(otu_table[,c(15:18, 27:30, 49:52,69:72, 85:86, 91:92)])
+
+#create metadata table
+envs_26<-c(rep("Egg Case", 4), rep("Gill", 4), rep("Internal Liquid", 4),rep("Skin", 4), "Water", "Hands","EC 16", "IL 16")
+sourcesink_26<-c(rep("Sink", 16), rep("Source", 4))
+sourcesinkid_26<-c(1:16, rep(NA, 4))
+otu_metadata_26<-data.frame(Env=envs_26, SourceSink=sourcesink_26, id=sourcesinkid_26)
+rownames(otu_metadata_26)<-rownames(otu_table_source_26)
+
+#run FEAST
+otu_FEAST_output_26 <- FEAST(C = otu_table_source_26, metadata = otu_metadata_26, different_sources_flag = 0, dir_path ="FEAST",COVERAGE = raredepth, outfile="OTU_S26")
+
+#import FEAST output as data table
+source_contribs_26<-read.table("OTU_S26_source_contributions_matrix.txt")
+#rename columns
+colnames(source_contribs_26)<-c("W", "H", "EC", "IL", "U")
+#tidy FEAST output table
+source_contribs_26_tidy<-pivot_longer(source_contribs_26, 1:5)
+source_contribs_26_tidy$sink<-c(rep("S26 Egg Case", 20), rep("S26 Gill", 20), rep("S26 Internal Liquid", 20), rep("S26 Skin", 20))
+source_contribs_26_tidy$sink<-factor(source_contribs_26_tidy$sink, as.character(c("S26 Egg Case","S26 Internal Liquid", "S26 Gill", "S26 Skin")))
+source_contribs_26_tidy$value<-source_contribs_26_tidy$value*100
+
+#create box and whisker plot
+fl<-c("#737373","#1F78B4", "#E31A1C", "#FF7F00","black") #set colors
+source_contribs_26_tidy$name<-factor(source_contribs_26_tidy$name, as.character(c("H", "W", "EC", "IL", "U")))
+source_contribs_16_tidy$sink<-factor(source_contribs_16_tidy$sink, as.character(c("S26 Egg Case", "S26 Internal Liquid", "S26 Gill", "S26 Skin")))
+sourcesinkplot_26<-ggplot(source_contribs_26_tidy, aes(x=name, y=value, col=name)) + 
+  geom_boxplot() +
+  geom_point(size = 2, shape = 16) +
+  facet_wrap(~sink) +
+  labs(x=NULL, y="Source %") +
+  theme(legend.position = "none", 
+        axis.text.y = element_text(angle = 90, hjust=0.5)) +
+  scale_color_manual(values=fl) +
+  scale_y_continuous(breaks = c(0, 25, 50, 75), limits = c(0,100))
+
+setwd()
+
+#subset ASV data table for stage 30 sinks and combined source pools
+otu_table_source_30<-t(otu_table[,c(19:22, 31:34, 53:56,73:76,85:86, 93:96)])
+
+#create metadata table
+envs_30<-c(rep("Egg Case", 4), rep("Gill", 4), rep("Internal Liquid", 4), rep("Skin", 4), "Water", "Hands","EC 26","G 26", "IL 26", "Skin 26")
+sourcesink_30<-c(rep("Sink", 16), rep("Source", 6))
+sourcesinkid_30<-c(1:16, rep(NA, 6))
+otu_metadata_30<-data.frame(Env=envs_30, SourceSink=sourcesink_30, id=sourcesinkid_30)
+rownames(otu_metadata_30)<-rownames(otu_table_source_30)
+
+#run FEAST
+otu_FEAST_output_30 <- FEAST(C = otu_table_source_30, metadata = otu_metadata_30, different_sources_flag = 0, dir_path ="FEAST",COVERAGE = raredepth, outfile="OTU_S30")
+
+#import FEAST output as data table
+source_contribs_30<-read.table("OTU_S30_source_contributions_matrix.txt")
+#rename columns
+colnames(source_contribs_30)<-c("W", "H", "EC", "G","IL", "S", "U")
+#tidy FEAST output table
+source_contribs_30_tidy<-pivot_longer(source_contribs_30, 1:7)
+source_contribs_30_tidy$sink<-c(rep("S30 Egg Case", 28), rep("S30 Gill", 28), rep("S30 Internal Liquid", 28), rep("S30 Skin", 28))
+source_contribs_30_tidy$sink<-factor(source_contribs_30_tidy$sink, as.character(c("S30 Egg Case","S30 Internal Liquid", "S30 Gill", "S30 Skin")))
+source_contribs_30_tidy$value<-source_contribs_30_tidy$value*100
+
+#create box and whisker plot
+fl<-c("#737373","#1F78B4", "#E31A1C", "#FF7F00","#33A02C", "#6A3D9A", "black")
+source_contribs_30_tidy$name<-factor(source_contribs_30_tidy$name, as.character(c("H", "W", "EC", "IL", "G", "S","U")))
+sourcesinkplot_30<-ggplot(source_contribs_30_tidy, aes(x=name, y=value, col=name)) + 
+  geom_boxplot() +
+  geom_point(size = 2, shape = 16) +
+  facet_wrap(~sink)+labs(x=NULL, y=NULL) + 
+  theme(legend.position = "none", 
+        axis.text.y = element_text(angle = 90, hjust=0.5)) +
+  scale_color_manual(values=fl) +
+  scale_y_continuous(breaks = c(0, 25, 50, 75), limits = c(0,100))
+
+setwd()
+
+#subset ASV data table for stage 33 sinks and combined source pools
+otu_table_source_33<-t(otu_table[,c(23:26, 35:38, 57:60,77:80,85:86, 97:100)])
+
+#create metadata table
+envs_33<-c(rep("Egg Case", 4), rep("Gill", 4), rep("Internal Liquid", 4), rep("Skin", 4),"Water", "Hands","EC 30","G 30", "IL 30", "Skin 30")
+sourcesink_33<-c(rep("Sink", 16), rep("Source", 6))
+sourcesinkid_33<-c(1:16, rep(NA, 6))
+otu_metadata_33<-data.frame(Env=envs_33, SourceSink=sourcesink_33, id=sourcesinkid_33)
+rownames(otu_metadata_33)<-rownames(otu_table_source_33)
+
+#run FEAST
+otu_FEAST_output_33 <- FEAST(C = otu_table_source_33, metadata = otu_metadata_33, different_sources_flag = 0, dir_path ="FEAST",COVERAGE = raredepth, outfile="OTU_S33")
+
+#import FEAST output as data table
+source_contribs_33<-read.table("OTU_S33_source_contributions_matrix.txt")
+#rename columns
+colnames(source_contribs_33)<-c("W", "H", "EC", "G","IL", "S", "U")
+#tidy FEAST output table
+source_contribs_33_tidy<-pivot_longer(source_contribs_33, 1:7)
+source_contribs_33_tidy$sink<-c(rep("S33 Egg Case", 28), rep("S33 Gill", 28), rep("S33 Internal Liquid", 28), rep("S33 Skin", 28))
+source_contribs_33_tidy$sink<-factor(source_contribs_33_tidy$sink, as.character(c("S33 Egg Case","S33 Internal Liquid", "S33 Gill", "S33 Skin")))
+source_contribs_33_tidy$value<-source_contribs_33_tidy$value*100
+
+#create box and whisker plot
+fl<-c("#737373","#1F78B4", "#E31A1C", "#FF7F00","#33A02C", "#6A3D9A", "black")
+source_contribs_33_tidy$name<-factor(source_contribs_33_tidy$name, as.character(c("H", "W", "EC", "IL", "G", "S","U")))
+sourcesinkplot_33<-ggplot(source_contribs_33_tidy, aes(x=name, y=value, col=name)) + 
+  geom_boxplot()+ geom_point(size = 2, shape = 16) +
+  facet_wrap(~sink) +
+  labs(x=NULL, y="Source %") + 
+  theme(legend.position = "none", 
+        axis.text.y = element_text(angle = 90, hjust=0.5)) +
+  scale_color_manual(values=fl) +
+  scale_y_continuous(breaks = c(0, 25, 50, 75), limits = c(0,100))
+
+setwd()
+
+#subset ASV data table for adult sinks and combined source pools
+otu_table_source_adult<-t(otu_table[,c(39:42, 81:84, 85:86, 101:104)])
+
+#create metadata table
+envs_adult<-c(rep("Gill", 4),  rep("Skin", 4),"Water", "Hands","EC 33","G 33", "IL 33", "Skin 33")
+sourcesink_adult<-c(rep("Sink", 8), rep("Source", 6))
+sourcesinkid_adult<-c(1:8, rep(NA, 6))
+otu_metadata_adult<-data.frame(Env=envs_adult, SourceSink=sourcesink_adult, id=sourcesinkid_adult)
+rownames(otu_metadata_adult)<-rownames(otu_table_source_adult)
+
+#run FEAST
+otu_FEAST_output_adult <- FEAST(C = otu_table_source_adult, metadata = otu_metadata_adult, different_sources_flag = 0, dir_path ="FEAST",COVERAGE = raredepth, outfile="OTU_adult")
+
+#import FEAST output as data table
+source_contribs_adult<-read.table("OTU_adult_source_contributions_matrix.txt")
+#rename columns
+colnames(source_contribs_adult)<-c("W", "H", "EC", "G","IL", "S", "U")
+#tidy FEAST output table
+source_contribs_adult_tidy<-pivot_longer(source_contribs_adult, 1:7)
+source_contribs_adult_tidy$sink<-c(rep("Adult Gill", 28), rep("Adult Skin", 28))
+source_contribs_adult_tidy$value<-source_contribs_adult_tidy$value*100
+
+#create box and whisker plot
+fl<-c("#737373","#1F78B4", "#E31A1C", "#FF7F00","#33A02C", "#6A3D9A", "black")
+source_contribs_adult_tidy$name<-factor(source_contribs_adult_tidy$name, as.character(c("H", "W", "EC", "IL", "G", "S","U")))
+sourcesinkplot_adult<-ggplot(source_contribs_adult_tidy, aes(x=name, y=value, col=name)) + 
+  geom_boxplot() +
+  geom_point(size = 2, shape = 16) +
+  facet_wrap(~sink)+labs(x=NULL, y=NULL) +
+  theme(legend.position = "none", 
+        axis.text.y = element_text(angle = 90, hjust=0.5)) +
+  scale_color_manual(values=fl) +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  scale_y_continuous(breaks = c(0, 25, 50, 75), limits = c(0,100))
+
+setwd()
+
+#subset ASV data table for adult sinks and combined source pools
+otu_table_source_adult_from_0_table<-t(otu_table[,c(39:42, 81:86, 89:90)])
+new_dataframe<-data.frame("gill"=rep(0, ncol(otu_table_source_adult_from_0_table)), "skin"=rep(0, ncol(otu_table_source_adult_from_0_table)))
+otu_table_source_adult_from_0<-rbind(otu_table_source_adult_from_0_table, t(new_dataframe))
+
+#create metadata table
+envs_adult_from_0<-c(rep("Gill", 4),  rep("Skin", 4), "Water", "Hands", "Egg Capsule 0", "Internal Liquid 0", "gill-c", "skin-c")
+sourcesink_adult_from_0<-c(rep("Sink", 8),rep("Source", 6))
+sourcesinkid_adult_from_0<-c(1:8, rep(NA, 6))
+otu_metadata_adult_from_0<-data.frame(Env=envs_adult_from_0, SourceSink=sourcesink_adult_from_0, id=sourcesinkid_adult_from_0)
+rownames(otu_metadata_adult_from_0)<-rownames(otu_table_source_adult_from_0)
+
+#run FEAST
+otu_FEAST_output_adult_from_0 <- FEAST(C = otu_table_source_adult_from_0, metadata = otu_metadata_adult_from_0, different_sources_flag = 0, dir_path ="FEAST",COVERAGE = raredepth, outfile="OTU_adult_from_0")
+
+#import FEAST output as data table
+source_contribs_adult_from_0<-read.table("OTU_adult_from_0_source_contributions_matrix.txt")
+#rename columns
+colnames(source_contribs_adult_from_0)<-c("H", "W", "EC", "IL", "G", "S","U") 
+
+#hide gill and skin since these are just about combining plots in the figure by shifting values off the graph.
+source_contribs_adult_from_0$G<-source_contribs_adult_from_0$G-100
+source_contribs_adult_from_0$S<-source_contribs_adult_from_0$S-100
+#tidy FEAST output table
+source_contribs_adult_from_0_tidy<-pivot_longer(source_contribs_adult_from_0, 1:7)
+source_contribs_adult_from_0_tidy$sink<-c(rep("Adult Gill (from Stage 0)", 28), rep("Adult Skin (from Stage 0)", 28))
+source_contribs_adult_from_0_tidy$value<-source_contribs_adult_from_0_tidy$value*100
+
+#create box and whisker plot
+fl<-c("#737373","#1F78B4", "#E31A1C", "#FF7F00","#33A02C", "#6A3D9A", "black")
+source_contribs_adult_from_0_tidy$name<-factor(source_contribs_adult_from_0_tidy$name, as.character(c("H", "W", "EC", "IL", "G", "S","U")))
+sourcesinkplot_adult_from_0<-ggplot(source_contribs_adult_from_0_tidy, aes(x=name, y=value, col=name)) + 
+  geom_boxplot() +
+  geom_point(size = 2, shape = 16) +
+  facet_wrap(~sink) +
+  labs(x=NULL, y=NULL) +
+  theme(legend.position = "none", 
+        axis.text.y = element_text(angle = 90, hjust=0.5)) +
+  scale_color_manual(values=fl) +
+  scale_y_continuous(breaks = c(0, 25, 50, 75), limits = c(0,100))
+
+#create box and whisker plot
+fl<-c("#737373","#1F78B4", "#E31A1C", "#FF7F00","#33A02C", "#6A3D9A", "black")
+source_contribs_adult_from_0_tidy$name<-factor(source_contribs_adult_from_0_tidy$name, as.character(c("H", "W", "EC", "IL", "G", "S","U")))
+#combine adult source pools (from stage 33 and from stage 0)
+source_contribs_adult_both_tidy<-rbind(source_contribs_adult_from_0_tidy, source_contribs_adult_tidy)
+source_contribs_adult_both_tidy$sink<-factor(source_contribs_adult_both_tidy$sink, as.character(c("Adult Gill", "Adult Skin", "Adult Gill (from Stage 0)", "Adult Skin (from Stage 0)")))
+
+#generate adult source plot
+sourcesinkplot_adult_both<-ggplot(source_contribs_adult_both_tidy, aes(x=name, y=value, col=name)) + 
+  geom_boxplot()+ geom_point(size = 2, shape = 16) +
+  facet_wrap(~sink) +
+  labs(x=NULL, y=NULL) +
+  theme(legend.position = "none", 
+        axis.text.y = element_text(angle = 90, hjust=0.5)) +
+  scale_color_manual(values=fl) +
+  scale_y_continuous(breaks = c(0, 25, 50, 75), limits = c(0,100))
+
+#generate and save figure
+FEAST_figure <- ggarrange(sourcesinkplot_0, sourcesinkplot_16, sourcesinkplot_26, sourcesinkplot_30, sourcesinkplot_33, sourcesinkplot_adult_both,
+                    labels = c("A", "B", "C", "D", "E", "F"),
+                    ncol = 2, nrow = 3, heights = c(0.5, 1,1))
+ggsave("all_sources_10000.pdf", plot=FEAST_figure, device="pdf", width = 175, height = 200, unit="mm")
+```
+
+### Supplementary Figure 4: Significant taxa comparisons in closed versus open egg capsules.
+
+```{r}
+#differentially abundant taxa between open and closed egg capsules were identified using LEfSe. Normalized abundances for these taxa were collected and Z scores were calculated in Excel.
+
+#import data 
+heatmap_raw_data<-read.csv(file="open_close_heatmap_data_cleaned.csv", header = TRUE)
+#tidy data for visualization
+heatmap_raw_data_tidy<-heatmap_raw_data %>% pivot_longer(-ID, names_to = "sample", values_to = "Z_Score")
+#factor samples to axis order
+Samples<-factor(heatmap_raw_data_tidy$sample, c("EC0A", "EC0B", "EC0C", "EC0D", "EC16A", "EC16B", "EC16C", "EC16D", "EC26A", "EC26B", "EC26C", "EC26D", "EC30A",  "EC30D",  "IL0A", "IL0B","IL0C", "IL0D", "IL16A", "IL16B", "IL26A", "IL26B", "IL26C","IL26D", "IL30A","IL30D", "EC30B", "EC30C","IL30B", "IL30C", "EC33A", "EC33B", "EC33C", "EC33D","IL33A", "IL33B", "IL33C", "IL33D"))
+
+#Fix alphabetical order for y axis
+factor_taxa_levels<-rev(c("Colwellia", "Hyphomonadaceae", "Oceanospirillales","Planctomycetacia", "Rhodobacteraceae", "Alphaproteobacteria", "Bacilli","Clostridiales", "Verrucomicrobiae", "Vibrionaceae", "Firmicutes", "Gammaproteobacteria_Unknown_Order", "SAR11_clade_Clade_I"))
+heatmap_raw_data_tidy$ID <- factor(heatmap_raw_data_tidy$ID,levels=factor_taxa_levels)
+
+#IL only "Orange", EC only "Red", IL & EC Black
+y_colors<-rev(c(rep("#E31A1C",5),rep("#FF7F00",5),rep("black",3)))
+#create heatmap
+
+openclose_heatmap<-ggplot(heatmap_raw_data_tidy, aes(x = Samples, y = ID, fill= Z_Score)) + 
+  geom_tile()+scale_fill_gradient2(low="blue", mid = "white", high="red", midpoint = 2)+ theme(axis.text.x = element_text(angle=-90, vjust = 0.5), axis.text.y = element_text(colour = y_colors))+labs(title = NULL)+ylab(NULL)+xlab(NULL)
+
+#save heatmap file
+ggsave(filename = "openclose_heatmap.pdf", plot = openclose_heatmap, device = "pdf", width = 7, height = 4)
+```
