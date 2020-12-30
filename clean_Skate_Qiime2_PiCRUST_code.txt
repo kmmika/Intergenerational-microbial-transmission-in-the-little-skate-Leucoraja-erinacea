@@ -1,0 +1,407 @@
+# read in data as Qiime2 artifact
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path ControlCombined_Manifest.tsv \
+--output-path skate.qza \
+--input-format PairedEndFastqManifestPhred33V2
+#Imported ControlCombined_Manifest.tsv as PairedEndFastqManifestPhred33V2 to skate.qza
+
+#Denoise data with DADA2
+#Therefore using ASVs
+qiime dada2 denoise-paired \
+--i-demultiplexed-seqs skate.qza \
+--p-trim-left-f 0 \
+--p-trim-left-r 0 \
+--p-trunc-len-f 251 \
+--p-trunc-len-r 251 \
+--o-table table.qza \
+--o-representative-sequences rep-seqs.qza \
+--o-denoising-stats denoising-stats.qza
+#Saved FeatureTable[Frequency] to: table.qza
+#Saved FeatureData[Sequence] to: rep-seqs.qza
+#Saved SampleData[DADA2Stats] to: denoising-stats.qza
+
+qiime metadata tabulate \
+--m-input-file denoising-stats.qza \
+--o-visualization denoising-stats.qzv
+#Saved Visualization to: denoising-stats.qzv
+
+#How many sequences are associated with each sample and with each feature, histograms of those distributions, and some related summary statistics
+qiime feature-table summarize \
+--i-table table.qza \
+--o-visualization table.qzv \
+--m-sample-metadata-file ControlCombined_Manifest.tsv 
+#Saved Visualization to: table.qzv
+
+#Provides a mapping of feature IDs to sequences, and provide links to easily BLAST each sequence against the NCBI nt database
+qiime feature-table tabulate-seqs \
+--i-data rep-seqs.qza \
+--o-visualization rep-seqs.qzv
+#Saved Visualization to: rep-seqs.qzv
+
+#Convert frequencies to relative frequencies by dividing each frequency in a sample by the sum of frequencies in that sample.
+qiime feature-table relative-frequency \
+--i-table table.qza \
+--o-relative-frequency-table rel-table.qza
+#Saved FeatureTable[RelativeFrequency] to: rel-table.qza
+
+#Re-summarize with relative frequencies
+qiime feature-table summarize \
+--i-table rel-table.qza \
+--o-visualization rel-table.qzv \
+--m-sample-metadata-file ControlCombined_Manifest.tsv
+#Saved Visualization to: rel-table.qzv
+
+#Machine Learning Classification
+#Importing data
+qiime tools import \
+--type 'FeatureData[Sequence]' \
+--input-path SILVA_132_QIIME_release/rep_set/rep_set_16S_only/99/silva_132_99_16S.fna \
+--output-path Silva99_seqs.qza
+#Imported SILVA_132_QIIME_release/rep_set/rep_set_16S_only/99/silva_132_99_16S.fna as DNASequencesDirectoryFormat to Silva99_seqs.qza
+
+qiime tools import \
+--type 'FeatureData[Taxonomy]' \
+--input-format HeaderlessTSVTaxonomyFormat \
+--input-path SILVA_132_QIIME_release/taxonomy/16S_only/99/taxonomy_7_levels.txt \
+--output-path Silva99_taxa.qza
+#Imported SILVA_132_QIIME_release/taxonomy/16S_only/99/taxonomy_7_levels.txt as HeaderlessTSVTaxonomyFormat to Silva99_taxa.qza
+
+#Extracting reads to train classifier
+#Chose 1 of 3 reverse primers and set identity to 70% to capture other 2 primers
+qiime feature-classifier extract-reads \
+--i-sequences Silva99_seqs.qza \
+--p-f-primer CCAGCAGCYGCGGTAAN \
+--p-r-primer CCGTCAATTTCTTTGAGT \
+--p-identity 0.7 \
+--p-trunc-len 251 \
+--o-reads class_ref-seqs.qza
+#Saved FeatureData[Sequence] to: class_ref-seqs.qza
+
+#Trained Classifier
+qiime feature-classifier fit-classifier-naive-bayes \
+--i-reference-reads class_ref-seqs.qza \
+--i-reference-taxonomy Silva99_taxa.qza \
+--o-classifier Silva_classifier.qza
+#Saved TaxonomicClassifier to: Silva_classifier.qza
+
+#Classifing Data
+qiime feature-classifier classify-sklearn \
+--i-classifier Silva_classifier.qza \
+--i-reads rep-seqs.qza \
+--o-classification Skate_taxa.qza
+#Saved FeatureData[Taxonomy] to: Skate_taxa.qza
+
+#Visualizing taxonomic assignments
+qiime metadata tabulate \
+--m-input-file Skate_taxa.qza \
+--o-visualization Skate_taxa.qzv
+#Saved Visualization to: Skate_taxa.qzv
+
+#Merges all features that share the same taxonomic assignment into a single feature
+qiime taxa collapse \
+--i-table table.qza \
+--i-taxonomy Skate_taxa.qza \
+--p-level 7 \
+--o-collapsed-table col-table.qza
+#Saved FeatureTable[Frequency] to: col-table.qza 
+
+#Takes collapsed table and converts frequencies to relative frequencies by dividing each frequency in a sample by the sum of frequencies in that sample.
+qiime feature-table relative-frequency \
+--i-table col-table.qza \
+--o-relative-frequency-table col-rel-table.qza
+#Saved FeatureTable[RelativeFrequency] to: col-rel-table.qza
+
+#With General Frequencies- How many sequences are associated with each sample and with each feature, histograms of those distributions, and some related summary statistics
+qiime feature-table summarize \
+--i-table col-table.qza \
+--o-visualization col-table.qzv \
+--m-sample-metadata-file ControlCombined_Manifest.tsv
+#Saved Visualization to: col-table.qzv
+
+#With Relative Frequencies- How many sequences are associated with each sample and with each feature, histograms of those distributions, and some related summary statistics
+qiime feature-table summarize \
+--i-table col-rel-table.qza \
+--o-visualization col-rel-table.qzv \
+--m-sample-metadata-file ControlCombined_Manifest.tsv
+#Saved Visualization to: col-rel-table.qzv
+
+##GO TO PHYLOSEQ R CODE FOR ABUNDANCE VALUE TRANSFORMATION
+
+qiime tools import \
+--input-path asv_biom.biom \
+--type 'FeatureTable[Frequency]' \
+--input-format BIOMV100Format \
+--output-path norm-table.qza
+#Imported asv_biom.biom as BIOMV100Format to norm-table.qza
+
+qiime tools import \
+--type 'FeatureData[Taxonomy]' \
+--input-format HeaderlessTSVTaxonomyFormat \
+--input-path tax.txt \
+--output-path taxonomy.qza
+#Imported tax.txt as HeaderlessTSVTaxonomyFormat to taxonomy.qza
+
+#How many sequences are associated with each sample and with each feature, histograms of those distributions, and some related summary statistics
+qiime feature-table summarize \
+--i-table norm-table.qza \
+--o-visualization norm-table.qzv \
+--m-sample-metadata-file ControlCombined_Manifest.tsv 
+#Saved Visualization to: norm-table.qzv
+
+#Merges all features that share the same taxonomic assignment into a single feature
+qiime taxa collapse \
+--i-table norm-table.qza \
+--i-taxonomy taxonomy.qza \
+--p-level 7 \
+--o-collapsed-table norm-col-table.qza
+#Saved FeatureTable[Frequency] to: norm-col-table.qza
+
+##Taxa Barplot
+#Using UNCOLLAPSED table
+qiime taxa barplot \
+--i-table norm-table.qza \
+--i-taxonomy taxonomy.qza \
+--m-metadata-file ControlCombined_Manifest.tsv \
+--o-visualization norm-taxa_barplot.qzv
+#Saved Visualization to: norm-taxa_barplot.qzv
+
+#Beta Diversity
+qiime diversity beta \
+--i-table norm-col-table.qza \
+--p-metric 'braycurtis' \
+--o-distance-matrix norm-BC-beta-col-table.qza
+#Saved DistanceMatrix to: norm-BC-beta-col-table.qza
+
+qiime diversity beta-group-significance \
+--i-distance-matrix norm-BC-beta-col-table.qza \
+--m-metadata-file ControlCombined_Manifest.tsv \
+--m-metadata-column 'TxTP' \
+--p-pairwise \
+--p-permutations 100000 \
+--o-visualization norm-BC-beta-TxTP-col-table.qzv
+#Saved Visualization to: norm-BC-beta-TxTP-col-table.qzv
+
+qiime diversity pcoa \
+--i-distance-matrix norm-BC-beta-col-table.qza \
+--o-pcoa norm-PCoA-BC-beta-col-table.qza
+#Saved PCoAResults to: norm-PCoA-BC-beta-col-table.qza
+
+qiime tools extract \
+--input-path norm-PCoA-BC-beta-col-table.qza \
+--output-path norm-PCoA-BC-beta-col-table
+#Extracted norm-PCoA-BC-beta-col-table.qza to directory norm-PCoA-BC-beta-col-table/45b204cc-a63c-4561-b6e6-2cda1ae24a02
+#Extracted file to R for figure
+
+#Filter all Egg Case
+qiime feature-table filter-samples \
+  --i-table norm-col-table.qza \
+  --m-metadata-file allEC_manifest.txt \
+  --o-filtered-table allEC-norm-col-table.qza
+  
+#Beta Diversity
+qiime diversity beta \
+--i-table allEC-norm-col-table.qza \
+--p-metric 'braycurtis' \
+--o-distance-matrix BC-allEC-norm-col-table.qza
+
+qiime diversity beta-group-significance \
+--i-distance-matrix BC-allEC-norm-col-table.qza \
+--m-metadata-file allEC_manifest.txt \
+--m-metadata-column 'TxTP' \
+--p-pairwise \
+--p-permutations 100000 \
+--o-visualization BC-allEC-norm-col-table.qzv
+
+qiime diversity pcoa \
+--i-distance-matrix BC-allEC-norm-col-table.qza \
+--o-pcoa PCoA-BC-allEC-norm-col-table.qza
+
+qiime tools extract \
+--input-path PCoA-BC-allEC-norm-col-table.qza \
+--output-path PCoA-BC-allEC-norm-col-table
+#Extracted file to R for figure
+  
+  
+#Filter all Gill
+qiime feature-table filter-samples \
+  --i-table norm-col-table.qza \
+  --m-metadata-file allGill_manifest.txt \
+  --o-filtered-table allGill-norm-col-table.qza
+  
+#Beta Diversity
+qiime diversity beta \
+--i-table allGill-norm-col-table.qza \
+--p-metric 'braycurtis' \
+--o-distance-matrix BC-allGill-norm-col-table.qza
+
+qiime diversity beta-group-significance \
+--i-distance-matrix BC-allGill-norm-col-table.qza \
+--m-metadata-file allGill_manifest.txt \
+--m-metadata-column 'TxTP' \
+--p-pairwise \
+--p-permutations 100000 \
+--o-visualization BC-allGill-norm-col-table.qzv
+
+qiime diversity pcoa \
+--i-distance-matrix BC-allGill-norm-col-table.qza \
+--o-pcoa PCoA-BC-allGill-norm-col-table.qza
+
+qiime tools extract \
+--input-path PCoA-BC-allGill-norm-col-table.qza \
+--output-path PCoA-BC-allGill-norm-col-table
+#Extracted file to R for figure
+
+
+#Filter all Internal Water
+qiime feature-table filter-samples \
+  --i-table norm-col-table.qza \
+  --m-metadata-file allIW_manifest.txt \
+  --o-filtered-table allIW-norm-col-table.qza
+  
+#Beta Diversity
+qiime diversity beta \
+--i-table allIW-norm-col-table.qza \
+--p-metric 'braycurtis' \
+--o-distance-matrix allIW-norm-col-table.qza
+
+qiime diversity beta-group-significance \
+--i-distance-matrix BC-allIW-norm-col-table.qza \
+--m-metadata-file allIW_manifest.txt \
+--m-metadata-column 'TxTP' \
+--p-pairwise \
+--p-permutations 100000 \
+--o-visualization BC-allIW-norm-col-table.qzv
+
+qiime diversity pcoa \
+--i-distance-matrix BC-allIW-norm-col-table.qza \
+--o-pcoa PCoA-BC-allIW-norm-col-table.qza
+
+qiime tools extract \
+--input-path PCoA-BC-allIW-norm-col-table.qza \
+--output-path PCoA-BC-allIW-norm-col-table
+
+
+#Filter all Skin
+qiime feature-table filter-samples \
+  --i-table norm-col-table.qza \
+  --m-metadata-file allSkin_manifest.txt \
+  --o-filtered-table allSkin-norm-col-table.qza
+  
+#Beta Diversity
+qiime diversity beta \
+--i-table allSkin-norm-col-table.qza \
+--p-metric 'braycurtis' \
+--o-distance-matrix allSkin-norm-col-table.qza
+
+qiime diversity beta-group-significance \
+--i-distance-matrix BC-allSkin-norm-col-table.qza \
+--m-metadata-file allSkin_manifest.txt \
+--m-metadata-column 'TxTP' \
+--p-pairwise \
+--p-permutations 100000 \
+--o-visualization BC-allSkin-norm-col-table.qzv
+
+qiime diversity pcoa \
+--i-distance-matrix BC-allSkin-norm-col-table.qza \
+--o-pcoa PCoA-BC-allSkin-norm-col-table.qza
+
+qiime tools extract \
+--input-path PCoA-BC-allSkin-norm-col-table.qza \
+--output-path PCoA-BC-allSkin-norm-col-table
+#Extracted file to R for figure
+
+##Alpha Diversity
+#Chao1
+qiime diversity alpha-group-significance \
+--i-alpha-diversity norm-chao1.qza \
+--m-metadata-file DiffSkinGill_Manifest.tsv \
+--o-visualization DSG-norm-chao1.qzv
+
+#Shannon
+qiime diversity alpha-group-significance \
+--i-alpha-diversity norm-shannon.qza \
+--m-metadata-file DiffSkinGill_Manifest.tsv \
+--o-visualization DSG-norm-shannon.qzv
+
+#Core Microbiome
+#Filter to just EC samples
+qiime feature-table filter-samples \
+  --i-table norm-col-table.qza \
+  --m-metadata-file EC_Manifest.tsv \
+  --o-filtered-table ECfilt-norm-col-table.qza
+#Saved FeatureTable[Frequency] to: ECfilt-norm-col-table.qza
+  
+# EC core features
+qiime feature-table core-features \
+--p-min-fraction 0.1 \
+--p-steps 10 \
+--i-table  ECfilt-norm-col-table.qza \
+--o-visualization  ECfilt-norm-col-table.qzv
+#Saved Visualization to: ECfilt-norm-col-table.qzv
+
+#Filter to just embryonic (external) gill and skin samples
+qiime feature-table filter-samples \
+  --i-table norm-col-table.qza \
+  --m-metadata-file Embryonic_Gill_Skin.txt \
+  --o-filtered-table EmbGillSkinfilt-norm-col-table.qza
+#Saved FeatureTable[Frequency] to: EmbGillSkinfilt-norm-col-table.qza
+  
+#Embryonic (External) Gill and Skin core features
+qiime feature-table core-features \
+--p-min-fraction 0.1 \
+--p-steps 10 \
+--i-table EmbGillSkinfilt-norm-col-table.qza \
+--o-visualization EmbGillSkinfilt-norm-col-table.qzv
+#Saved Visualization to: EmbGillSkinfilt-norm-col-table.qzv
+
+#Filter to just internal gill samples
+qiime feature-table filter-samples \
+  --i-table norm-col-table.qza \
+  --m-metadata-file Internal_Gill_Manifest.tsv \
+  --o-filtered-table IntGillfilt-norm-col-table.qza
+#Saved FeatureTable[Frequency] to: IntGillfilt-norm-col-table.qza
+  
+#Internal Gill core features
+qiime feature-table core-features \
+--p-min-fraction 0.1 \
+--p-steps 10 \
+--i-table IntGillfilt-norm-col-table.qza \
+--o-visualization IntGillfilt-norm-col-table.qzv
+#Saved Visualization to: IntGillfilt-norm-col-table.qzv
+
+#Filter to just adult skin samples
+qiime feature-table filter-samples \
+  --i-table norm-col-table.qza \
+  --m-metadata-file Adult_Skin_Manifest.tsv \
+  --o-filtered-table AdulSkinFilt-norm-col-table.qza
+#Saved FeatureTable[Frequency] to: AdulSkinFilt-norm-col-table.qza
+  
+#Adult skin core features
+qiime feature-table core-features \
+--p-min-fraction 0.1 \
+--p-steps 10 \
+--i-table AdulSkinFilt-norm-col-table.qza \
+--o-visualization AdulSkinFilt-norm-col-table.qzv
+#Saved Visualization to: AdulSkinFilt-norm-col-table.qzv
+
+
+#PICRUSt2
+qiime tools extract \
+--input-path rep-seqs.qza \
+--output-path rep-seqs
+#Extracted rep-seqs.qza to directory rep-seqs/0f70351b-2b09-4d78-b437-0ab3a7b53a45
+
+qiime tools extract \
+--input-path norm-table.qza \
+--output-path norm-table
+#Extracted norm-table.qza to directory norm-table/107e13c4-cef2-427b-b68e-e779cd8d30a8
+
+picrust2_pipeline.py -s rep-seqs/0f70351b-2b09-4d78-b437-0ab3a7b53a45/data/dna-sequences.fasta -i norm-table/107e13c4-cef2-427b-b68e-e779cd8d30a8/data/feature-table.biom -o norm_picrust2_out_pipeline --stratified -p 1
+#Warning - 114 input sequences aligned poorly to reference sequences (--min_align option specified a minimum proportion of 0.8 aligning to reference sequences). These input sequences will not be placed and will be excluded from downstream steps.
+
+#This is the set of poorly aligned input sequences to be excluded: 9deaaa4b9701241fe2090d41686486ab, de13caadf2040d51780291f7dffe1d51, d428f4eea43dfe965453c7e2dbdad629, 8582bc0cacba1dd064d886bd1f0ebfec, 70a10055a13a796b7c46cdcf828fa34e, b9f8f62aa8e51abeba9161bc396be208, aaab2548523b9945a745089630a3f91b, e01eeb425087c8e8134cf65add340dfb, 0e286791e0459f36a3349a94ef98e86b, 40447797d48a212a3d58f057494e6a1e, 2e211253ae78e49cdc13f17e563ca412, c48545758edce2f411adccacc6cec9e9, afa5865591614eb8aa7168e7c5773f84, f15a71dff4ab283618f290bb0155812e, e2494185fa4bbe75d97bf8bef7f3804f, a709e3f5903a2336d737391dd89362dc, 99676817e2d4580906826a8ad69cbbf6, 165bdda3e88e37c4a9487a7d597cf339, a54560a34b048158b322e929969a7577, 8d58db51d415d80ad4e10e3afa7f4b8e, 00027811c02bc7933b09075192307416, fe3de5426ba63c6bea9b6c86f43d232a, 7860dc41021ffa0c83fe1643a938771c, 45fd70b900c90b86969ae111c4d0c1e1, 825414796936533985442952054855ac, caa531f85565d81333915c19a8fefb3c, bea9c4e425bd2c1d5ee37ed68ef560c2, 1cb87676587ab37214495b61cdd54625, 809f68acf4ab298b7c220610212524b6, 067791fc7bc4dc396c7a1f0e2a5d861d, b1e2c08adb34a14a5b3a987d7d9560f1, e0f95504b62d1d5d408ca9852fa62818, 9a010068ce4195e4f842cecd51c78253, edee8f0b6c589294b7b2d3a395d6d4fa, 00f4ae6661149bba89c61b29756670c4, e6f221215114e22f940caf4a65362345, 5e00371e98dace4887c1a958ad811b35, 04191750b21a6e4c0e251ff87ac52611, 209bb5af3c5435a4b836ec7c535e5149, 11ae432a1d11146f878001ec7bb7b491, 0aef2af035c921a4ab0e8d4bbf4bde2f, 8e915383bce7e1771bc74ef9f48addb0, 7a7b455f1474219ea44dd3f0d2502d01, fc212fbfabaa4f4d00fd5641cd1da043, 4136328d88b65d9479f983be0652994d, a26925f2c7d405905901a4a0a28789df, 8d5fb9d611a5ab34cebb1a3497b03703, ac70afd8d67332b546543d2febc2cdc4, eac01ca6dac55539eadc660fe2d97c77, 46615fd3d09d53d38c7d28f94723f199, 52f6f5dfe98f981dfebb851dcd81045f, 701184dbb2d1109387271176735c29a4, cbf1cea394726ec983c130926a0aca2c, 4b80c876ea6787b1a8ad29f9b07d250c, ad84c3cfa75cbb2473fea9561521858b, 2efe43ddeab6413a5c98c173f0c29c49, bd2b5055835c8ccc5ab737b5a371a2b3, 6fcf2e0b1bf15ef73380f3c57eaa11ee, 48afc43a30356c84b18c582471c3d2df, df41dde32fac5a1e50740fb95130a11a, 8178b05dfb6e32c61b3aebeb7d5f82b0, dcf8fc7dad5445b2d0d077e76d78c735, 22f295958cccc400afee4b14dc216104, 2b234b23e9f9d108838c8fdba45120c9, a4e2842b6961f1792a0b7e05452c5900, 1116297296981bac7c8de32aa9bd498a, 11b0ae9a30bcfed04a5ee451e9a6b1be, 611815e237588acc6a886af8f9ca96de, 570135ab303df2171fd946dd058f527a, bc5b7686b981277b12dd14102299d291, d524654c9690ac12b15055b4568898d1, 0c7d975ff1456eb6783514976746db91, c943f6e557ea9b1357ffafcf385b9227, 3913d90607f0ec6f222445da09b7c46a, cc833302709339e12633fa8aab3af868, 89451185401c94abd872ee61b1a38bda, 6fa1967b28a442a18b13a40125f2f807, 2bd688b16d10dc0743f13ea3a6a41363, f6883d74977116afbbf5f71004ae5172, b91c4eafd3e4a78dfb1034fa37a9da73, 1f4b7716b822e07453c5668a19958276, 47f0693d13d6a64beb2b87636a4a7967, 6e436c5575ca9ef5167e64feb4c3da84, 63433f33dfa927f0069d1ec5f8fdd227, e33c042a9db8dc393b6c0ea944c710a4, 7fe35937a69afd5066b70e7cf0c70660, 07c473160b07ba94763b65a78df0d9f5, fb5cf53ddaf5e0038a2029d7a84dcff8, 88fc1c9af39fd8b4ec1bc5d92f1ad614, 9ffc59d66f041c39c2e70345403b197b, 60101b5558fa20c1b3b9dc0f94136441, 81e9e7b42a81e928fae68c1707ab7088, 55ac0b07e241add6d45d6223c0c6cb2c, c01091f8ce691224e68b8f9984e446c8, 4dd953f6965d7c44237b8a2874550cf3, ffece19dd258c4db6c4b92734706b55f, 648b51b6593c2e3df1378f37adcd253c, a76038c21955f843b78dad2c89cbdfc4, 41f55cae8e33cde9afc7ae942b6d2232, d7650d25401fee1a22a33d4941ff8b67, 70bc4a57a50416d021750e589d53ed2a, 9526e1052340993045a4f16fcf3ac507, 0be329cbd24ac7fbe01846bdb42ccc6a, 9ea3853b73d573d8f6eea585d5154e77, 6107faec24cd59b093d41a8cb0eb18af, 99dab96b714d26ef1e914a9a03355344, e9148d698db679dc9d1f91809ce1dad3, 68ebe56cd078059eb1480ffdaf2d0957, db394576d01ffc2db0b3c890e9775ef9, 9c7805e1f086b3ec61d96212306d9ee2, 8cf6cadbb88328fdc14721192a671f92, 1aca02db2d6de6518623ffeac52f47bb, 356b0759b7b92f2b8162f1df60e1a8e6, 19e4e1013519daafc470f76e43e0d7fe
+
+#861 of 41372 ASVs were above the max NSTI cut-off of 2.0 and were removed.
+
+#861 of 41372 ASVs were above the max NSTI cut-off of 2.0 and were removed.

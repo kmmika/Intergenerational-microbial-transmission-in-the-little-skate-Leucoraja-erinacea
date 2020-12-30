@@ -1,0 +1,9 @@
+sample-id	Tissue	Time-Point	TxTP	TxTP_num	forward-absolute-filepath	reverse-absolute-filepath
+Gill33A	Gill	stg33	G33	11	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/Gill33A_R1.fastq.gz	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/Gill33A_R2.fastq.gz
+Gill33B	Gill	stg33	G33	11	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/Gill33B_R1.fastq.gz	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/Gill33B_R2.fastq.gz
+Gill33C	Gill	stg33	G33	11	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/Gill33C_R1.fastq.gz	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/Gill33C_R2.fastq.gz
+Gill33D	Gill	stg33	G33	11	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/Gill33D_R1.fastq.gz	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/Gill33D_R2.fastq.gz
+GillAdult1	Gill	stgAdult	GAd	12	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/GillAdult1_R1.fastq.gz	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/GillAdult1_R2.fastq.gz
+GillAdult2	Gill	stgAdult	GAd	12	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/GillAdult2_R1.fastq.gz	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/GillAdult2_R2.fastq.gz
+GillAdult3	Gill	stgAdult	GAd	12	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/GillAdult3_R1.fastq.gz	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/GillAdult3_R2.fastq.gz
+GillAdult4	Gill	stgAdult	GAd	12	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/GillAdult4_R1.fastq.gz	/Users/kmmika/Desktop/DMW_LSM_Bv4v5/GillAdult4_R2.fastq.gz

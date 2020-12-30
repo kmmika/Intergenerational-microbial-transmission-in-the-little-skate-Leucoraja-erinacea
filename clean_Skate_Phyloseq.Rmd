@@ -1,0 +1,85 @@
+---
+title: "Skate_Phyloseq"
+output: html_document
+---
+#Prep Workspace
+```{r prep workspace}
+library("qiime2R")
+library("phyloseq")
+```
+
+#Prepping Qiime2 Data
+#skip
+```{r reading in .qza}
+table <- read_qza("table.qza")
+metadata<-read.table("ControlCombined_Manifest.tsv", header  =T)
+taxonomy<-read_qza("Skate_taxa.qza")
+
+```
+
+#Creating phylopseq object
+```{r phyloseq object}
+skate_physeq<-qza_to_phyloseq(
+    features="table.qza",
+    tree="rooted-tree.qza", 
+    "Skate_taxa.qza",
+    metadata = "ControlCombined_Manifest.tsv"
+    )
+```
+
+#Abundance Value Transformation
+```{r define a relative abundance graphic}
+#We will use this to compare differences in scale and distribution of the abundance values in our phyloseq object before and after transformation.
+
+plot_abundance = function(physeq,title = "",
+			     Facet = "Order", Color = "Phylum"){
+  # Arbitrary subset, based on Phylum, for plotting
+  p1f = subset_taxa(physeq, Phylum %in% c("Firmicutes"))
+  mphyseq = psmelt(p1f)
+  mphyseq <- subset(mphyseq, Abundance > 0)
+  ggplot(data = mphyseq, mapping = aes_string(x = "Tissue",y = "Abundance",
+                                 color = Color, fill = Color)) +
+    geom_violin(fill = NA) +
+    geom_point(size = 1, alpha = 0.3,
+                position = position_jitter(width = 0.3)) +
+    facet_wrap(facets = Facet) + scale_y_log10()+
+    theme(legend.position="none")
+}
+```
+
+```{r transform}
+#Transform to relative abundance. Save as new object.
+skate_physeq_transform = transform_sample_counts(skate_physeq, function(x){(x / sum(x))*10000})
+
+```
+
+```{r compare}
+plotBefore = plot_abundance(skate_physeq,"")
+plotAfter = plot_abundance(skate_physeq_transform,"")
+# Combine each plot into one graphic.
+grid.arrange(nrow = 2, plotBefore, plotAfter)
+
+```
+
+#Export
+```{r export}
+# Export feature/OTU table
+# As a biom file
+
+library(biomformat);packageVersion("biomformat")
+
+asv_physeq<-as(otu_table(skate_physeq_transform),"matrix")
+otu_biom<-make_biom(data=asv_physeq)
+write_biom(otu_biom,"asv_biom.biom")
+```
+
+```{r export taxa}
+tax<-as(tax_table(skate_physeq_transform),"matrix")
+tax_cols <- colnames(tax)
+tax<-as.data.frame(tax)
+tax$taxonomy<-do.call(paste, c(tax[tax_cols], sep=";"))
+for(co in tax_cols) tax[co]<-NULL
+write.table(tax, "tax.txt", quote=FALSE, col.names=FALSE, sep="\t")
+
+```
+
